@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#2563EB">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Kuitansi App</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2910/2910795.png">
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/2910/2910795.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        /* Custom Animations */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
+        .animate-slide-up { animation: slideUp 0.3s ease-out; }
+        
+        /* Hide Scrollbar for clean UI */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        body { -webkit-tap-highlight-color: transparent; }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+    // --- HELPER FUNCTIONS & COMPONENTS ---
+
+    const formatRupiah = (angka) => {
+        if (!angka) return "0";
+        return new Intl.NumberFormat('id-ID').format(Number(angka));
+    };
+
+    const terbilang = (angka) => {
+        const bilne = ["", "Satu", "Dua", "Tiga", "Empat", "Lima", "Enam", "Tujuh", "Delapan", "Sembilan", "Sepuluh", "Sebelas"];
+        let result = ""; 
+        if (angka < 12) result = " " + bilne[angka];
+        else if (angka < 20) result = terbilang(angka - 10) + " Belas";
+        else if (angka < 100) result = terbilang(Math.floor(angka / 10)) + " Puluh" + terbilang(angka % 10);
+        else if (angka < 200) result = " Seratus" + terbilang(angka - 100);
+        else if (angka < 1000) result = terbilang(Math.floor(angka / 100)) + " Ratus" + terbilang(angka % 100);
+        else if (angka < 2000) result = " Seribu" + terbilang(angka - 1000);
+        else if (angka < 1000000) result = terbilang(Math.floor(angka / 1000)) + " Ribu" + terbilang(angka % 1000);
+        else if (angka < 1000000000) result = terbilang(Math.floor(angka / 1000000)) + " Juta" + terbilang(angka % 1000000);
+        return result;
+    };
+
+    const ChecklistItem = ({ label, value, isCustom = false, customLabel = "" }) => {
+        const valNum = Number(value);
+        const showCheck = valNum > 0;
+        
+        const displayLabel = isCustom ? (customLabel || "Lain-lain") : label;
+        
+        return (
+            <div className="flex items-end gap-1 h-5 w-full">
+                <div className={`w-3 h-3 mb-1 border border-black flex-shrink-0 flex items-center justify-center text-[10px] ${showCheck ? 'bg-black text-white' : ''}`}>
+                    {showCheck && <Check size={10} />}
+                </div>
+                <div className="w-20 mb-0.5 leading-none text-[10px] flex-shrink-0 truncate">
+                    {displayLabel}
+                </div>
+                <div className="flex-grow border-b border-dotted border-black flex items-end pb-0.5 justify-start">
+                    <span className="leading-none text-[10px] pl-1">
+                        {showCheck ? `Rp. ${formatRupiah(valNum)},-` : ""}
+                    </span>
+                </div>
+            </div>
+        );
+    };
+
+    // --- ICON COMPONENTS ---
+    const IconWrapper = ({ children, size = 24, className = "" }) => (
+        <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            {children}
+        </svg>
+    );
+    const Check = (props) => <IconWrapper {...props}><polyline points="20 6 9 17 4 12"/></IconWrapper>;
+    const Download = (props) => <IconWrapper {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></IconWrapper>;
+    const RefreshCw = (props) => <IconWrapper {...props}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></IconWrapper>;
+    const Plus = (props) => <IconWrapper {...props}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></IconWrapper>;
+    const Trash2 = (props) => <IconWrapper {...props}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></IconWrapper>;
+    const ArrowLeft = (props) => <IconWrapper {...props}><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></IconWrapper>;
+    const Eye = (props) => <IconWrapper {...props}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></IconWrapper>;
+    const FileText = (props) => <IconWrapper {...props}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></IconWrapper>;
+    const ChevronRight = (props) => <IconWrapper {...props}><polyline points="9 18 15 12 9 6"/></IconWrapper>;
+    const User = (props) => <IconWrapper {...props}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></IconWrapper>;
+    const ImageIcon = (props) => <IconWrapper {...props}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></IconWrapper>;
+    const UploadIcon = (props) => <IconWrapper {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></IconWrapper>;
+    const MessageSquare = (props) => <IconWrapper {...props}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></IconWrapper>;
+
+    // --- MAIN APP COMPONENT ---
+    function KuitansiMobileApp() {
+        const [viewMode, setViewMode] = useState('form');
+        const [isLoading, setIsLoading] = useState(false);
+        const [formData, setFormData] = useState({
+            nama: '', 
+            // 'kelas' dihapus dari state karena tidak lagi digunakan
+            alamat: '', 
+            tanggal: new Date().toISOString().split('T')[0], 
+            penerimaId: 'default',
+            spp: '', 
+            akomodasi: '', 
+            pendaftaran: '', 
+            custom1Label: '', custom1Value: '',
+            custom2Label: '', custom2Value: '',
+            custom3Label: '', custom3Value: '',
+            catatan: ''
+        });
+
+        const [receivers, setReceivers] = useState([{ id: 'default', name: 'Admin Keuangan', signature: null }]);
+        const [showAddReceiver, setShowAddReceiver] = useState(false);
+        const [newReceiverName, setNewReceiverName] = useState('');
+        const [newReceiverSign, setNewReceiverSign] = useState(null);
+        
+        const [totalUang, setTotalUang] = useState(0);
+        const [terbilangText, setTerbilangText] = useState('');
+        
+        const receiptRef = useRef(null);
+
+        useEffect(() => {
+            const saved = localStorage.getItem('app_receivers');
+            if (saved) setReceivers(JSON.parse(saved));
+        }, []);
+
+        useEffect(() => {
+            if (receivers.length > 1) localStorage.setItem('app_receivers', JSON.stringify(receivers));
+        }, [receivers]);
+
+        useEffect(() => {
+            const total = 
+                Number(formData.spp) + 
+                Number(formData.akomodasi) + 
+                Number(formData.pendaftaran) + 
+                Number(formData.custom1Value) +
+                Number(formData.custom2Value) +
+                Number(formData.custom3Value);
+            
+            setTotalUang(total);
+            setTerbilangText(total === 0 ? '' : terbilang(Math.abs(total)) + " Rupiah");
+        }, [formData]);
+
+        const handleChange = (e) => {
+            const { name, value } = e.target;
+            setFormData(prev => ({ ...prev, [name]: value }));
+        };
+
+        const handleAddReceiver = async () => {
+            if (!newReceiverName) return alert("Nama penerima wajib diisi");
+            setIsLoading(true);
+
+            let signatureData = null;
+            
+            if (newReceiverSign) {
+                signatureData = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(newReceiverSign);
+                });
+            }
+
+            const newReceiver = { 
+                id: Date.now().toString(), 
+                name: newReceiverName, 
+                signature: signatureData 
+            };
+
+            setReceivers(prev => [...prev, newReceiver]);
+            setFormData(prev => ({ ...prev, penerimaId: newReceiver.id }));
+            
+            setNewReceiverName(''); 
+            setNewReceiverSign(null); 
+            setShowAddReceiver(false); 
+            setIsLoading(false);
+        };
+
+        const handleDeleteReceiver = (id) => {
+            if (confirm("Hapus penerima ini?")) {
+            const updated = receivers.filter(r => r.id !== id);
+            setReceivers(updated);
+            setFormData(prev => ({ ...prev, penerimaId: 'default' }));
+            }
+        };
+
+        const getSelectedReceiver = () => receivers.find(r => r.id === formData.penerimaId) || receivers[0];
+
+        const handlePrint = () => {
+            setIsLoading(true);
+            const element = receiptRef.current;
+            const opt = { 
+                margin: 0, 
+                filename: `Kuitansi_${formData.nama || 'Santri'}_${formData.tanggal}.pdf`, 
+                image: { type: 'jpeg', quality: 0.98 }, 
+                html2canvas: { scale: 3, useCORS: true, scrollY: 0 }, 
+                jsPDF: { unit: 'mm', format: [193, 105], orientation: 'landscape' } 
+            };
+            window.html2pdf().set(opt).from(element).save().then(() => setIsLoading(false));
+        };
+
+        const resetForm = () => {
+            setFormData({
+                nama: '', alamat: '', 
+                tanggal: new Date().toISOString().split('T')[0], 
+                penerimaId: 'default',
+                spp: '', akomodasi: '', pendaftaran: '',
+                custom1Label: '', custom1Value: '',
+                custom2Label: '', custom2Value: '',
+                custom3Label: '', custom3Value: '',
+                catatan: ''
+            })
+        }
+
+        if (viewMode === 'form') {
+            return (
+            <div className="min-h-screen bg-gray-50 pb-20 font-sans max-w-md mx-auto shadow-2xl overflow-hidden relative">
+                <div className="bg-blue-600 text-white p-4 shadow-md sticky top-0 z-50 flex items-center justify-between">
+                <div><h1 className="text-lg font-bold">Aplikasi Kuitansi</h1><p className="text-xs text-blue-100">Tanpa Kop & Kelas</p></div>
+                <button onClick={resetForm} className="p-2 bg-blue-700 rounded-full hover:bg-blue-800"><RefreshCw size={18} /></button>
+                </div>
+
+                <div className="p-4 space-y-4 animate-fade-in">
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                        <h3 className="text-sm font-bold text-blue-600 mb-3 flex items-center gap-2"><User size={16}/> Data Siswa</h3>
+                        <div className="space-y-3">
+                            <div><label className="text-xs text-gray-500 font-medium">Nama Lengkap</label><input type="text" name="nama" value={formData.nama} onChange={handleChange} className="w-full mt-1 p-3 bg-gray-50 border-none rounded-lg focus:ring-2 focus:ring-blue-500 transition-all text-sm" placeholder="Contoh: Abdullah" /></div>
+                            
+                            {/* INPUT KELAS TELAH DIHAPUS DI SINI */}
+                            
+                            <div><label className="text-xs text-gray-500 font-medium">Alamat / Asal</label><input type="text" name="alamat" value={formData.alamat} onChange={handleChange} className="w-full mt-1 p-3 bg-gray-50 border-none rounded-lg focus:ring-2 focus:ring-blue-500 transition-all text-sm" placeholder="Contoh: Kediri" /></div>
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                        <h3 className="text-sm font-bold text-green-600 mb-3 flex items-center gap-2"><FileText size={16}/> Rincian Pembayaran</h3>
+                        
+                        <div className="mb-4">
+                            <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Biaya</label>
+                            <div className="space-y-2">
+                                {['spp', 'akomodasi', 'pendaftaran'].map((field) => (
+                                    <div key={field} className="flex items-center gap-2">
+                                        <span className="w-24 text-[11px] font-bold uppercase">{field}</span>
+                                        <input type="number" name={field} value={formData[field]} onChange={handleChange} className="flex-grow p-2 border border-gray-200 rounded-lg text-sm focus:border-green-500 outline-none" placeholder="0" />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="border-t pt-4">
+                             <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Biaya Lainnya</label>
+                             <div className="space-y-3">
+                                {[1, 2, 3].map(num => (
+                                    <div key={num} className="flex gap-2">
+                                        <input type="text" name={`custom${num}Label`} value={formData[`custom${num}Label`]} onChange={handleChange} className="w-1/2 p-2 border border-gray-200 rounded-lg text-xs" placeholder={`Label ${num}`} />
+                                        <input type="number" name={`custom${num}Value`} value={formData[`custom${num}Value`]} onChange={handleChange} className="w-1/2 p-2 border border-gray-200 rounded-lg text-xs" placeholder="Rp 0" />
+                                    </div>
+                                ))}
+                             </div>
+                        </div>
+                        
+                        <div className="mt-4 pt-3 border-t border-gray-100">
+                             <h4 className="text-xs font-bold text-gray-500 mb-2 flex items-center gap-1"><MessageSquare size={12}/> Catatan</h4>
+                             <textarea 
+                                name="catatan" 
+                                value={formData.catatan} 
+                                onChange={handleChange}
+                                className="w-full p-2 bg-yellow-50 border border-yellow-200 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:outline-none resize-none"
+                                rows="3"
+                                placeholder="Tekan Enter untuk baris baru..."
+                             ></textarea>
+                        </div>
+
+                        <div className="mt-4 bg-gray-900 text-white p-3 rounded-lg text-center"><div className="text-xs text-gray-400">Total Yang Diterima</div><div className="text-xl font-bold">Rp {formatRupiah(totalUang)}</div><div className="text-[10px] italic text-gray-400 mt-1 line-clamp-1">{terbilangText}</div></div>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-20">
+                        <h3 className="text-sm font-bold text-purple-600 mb-3 flex items-center gap-2">Penerima & Tanggal</h3>
+                        <div className="space-y-3">
+                            <input type="date" name="tanggal" value={formData.tanggal} onChange={handleChange} className="w-full p-2 border rounded-lg text-sm bg-gray-50" />
+                            {!showAddReceiver ? (
+                                <div className="flex gap-2">
+                                    <div className="relative flex-grow">
+                                        <select name="penerimaId" value={formData.penerimaId} onChange={handleChange} className="w-full p-3 bg-gray-50 border-none rounded-lg text-sm appearance-none">{receivers.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+                                        <ChevronRight size={16} className="absolute right-3 top-3.5 text-gray-400 pointer-events-none rotate-90" />
+                                    </div>
+                                    <button onClick={() => setShowAddReceiver(true)} className="bg-blue-100 text-blue-600 p-3 rounded-lg"><Plus size={20}/></button>
+                                    {formData.penerimaId !== 'default' && <button onClick={() => handleDeleteReceiver(formData.penerimaId)} className="bg-red-100 text-red-600 p-3 rounded-lg"><Trash2 size={20}/></button>}
+                                </div>
+                            ) : (
+                                <div className="bg-purple-50 p-3 rounded-lg border border-purple-200 animate-slide-up">
+                                    <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-purple-800">Tambah Penerima</span><button onClick={() => setShowAddReceiver(false)} className="text-xs text-red-500">Batal</button></div>
+                                    <input type="text" value={newReceiverName} onChange={(e) => setNewReceiverName(e.target.value)} placeholder="Nama Penerima" className="w-full p-2 text-sm border rounded mb-2" />
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <label className="flex-grow p-2 border border-dashed border-purple-400 rounded text-center text-xs text-purple-600 bg-white cursor-pointer"><ImageIcon size={14} className="inline mr-1"/> Upload TTD<input type="file" accept="image/*" onChange={(e) => setNewReceiverSign(e.target.files[0])} className="hidden" /></label>
+                                        {newReceiverSign && <Check size={16} className="text-green-600" />}
+                                    </div>
+                                    <button onClick={handleAddReceiver} disabled={isLoading} className="w-full bg-purple-600 text-white py-2 rounded text-sm font-bold">{isLoading ? "Menyimpan..." : "Simpan"}</button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 z-40 max-w-md mx-auto">
+                    <button onClick={() => setViewMode('preview')} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg flex items-center justify-center gap-2 transition-transform active:scale-95"><Eye size={20} /> Lihat Preview</button>
+                </div>
+            </div>
+            );
+        }
+
+       if (viewMode === 'preview') {
+            return (
+            <div className="min-h-screen bg-gray-900 flex flex-col font-sans fixed inset-0 z-50 overflow-hidden text-black">
+                {/* Header Preview Control */}
+                <div className="bg-gray-800 p-4 flex items-center justify-between shadow-lg z-10 flex-shrink-0">
+                    <button onClick={() => setViewMode('form')} className="text-white flex items-center gap-2 opacity-80 hover:opacity-100 transition-all">
+                        <ArrowLeft size={20} /> 
+                        <span className="text-sm font-medium">Kembali Edit</span>
+                    </button>
+                    <span className="text-white font-bold text-sm tracking-widest uppercase">Preview Kuitansi</span>
+                    <div className="w-8"></div>
+                </div>
+
+                {/* --- AREA UTAMA PREVIEW --- */}
+                <div className="flex-grow overflow-auto bg-gray-700 relative w-full flex justify-center items-start py-6">
+                    <div className="relative shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex-shrink-0">
+                        {/* Kertas Kuitansi (Ukuran Tetap 193x105mm) */}
+                        <div ref={receiptRef} className="bg-white text-black relative overflow-hidden" style={{ width: '193mm', height: '105mm', padding: '6mm 12mm', boxSizing: 'border-box' }}>
+                            
+                            <div className="h-full flex flex-col relative z-10">
+                                
+                                {/* 1. HEADER: Bukti Pembayaran Sah DIHAPUS agar space-y-2 bisa naik */}
+                                <div class="border-b-2 border-black pb-1 mb-2">
+  <h1 class="text-center text-2xl font-black tracking-tighter text-blue-900">
+    TANDA TERIMA
+  </h1>
+</div>
+
+                                {/* 2. KONTEN: Diperketat dari space-y-2 menjadi space-y-1 */}
+                                <div className="space-y-1">
+                                    <table className="w-full text-[12px]">
+                                        <tbody className="leading-tight">
+                                            <tr>
+                                                {/* Label dipisah menjadi 2 baris agar ":" sejajar dengan "Dari" */}
+                                                <td className="w-28 font-bold py-0.5 uppercase text-gray-700 leading-none">
+                                                    <br/>NAMA
+                                                </td>
+                                                <td className="w-4 text-center align-bottom pb-1">:</td>
+                                                <td className="border-b border-gray-300 align-bottom">
+                                                    <span className="font-bold text-base pl-2 text-blue-800 capitalize leading-none">{formData.nama || "-"}</span>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td className="font-bold py-1 uppercase text-gray-700">Alamat / Asal</td>
+                                                <td className="text-center">:</td>
+                                                <td className="border-b border-gray-300 align-bottom">
+                                                    <span className="pl-2 text-gray-700 italic text-[11px] leading-none">{formData.alamat || "-"}</span>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td className="font-bold py-1 uppercase text-gray-700">Uang Sejumlah</td>
+                                                <td className="text-center">:</td>
+                                                <td className="bg-blue-50 border-b-2 border-blue-100 align-bottom py-0.5">
+                                                    <span className="font-black text-lg pl-2 text-blue-900 font-mono leading-none">Rp {formatRupiah(totalUang)},-</span>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td></td>
+                                                <td></td>
+                                                <td className="pt-0.5">
+                                                    <div className="italic text-gray-600 text-[10px] leading-tight">
+                                                        ( {terbilangText || "Nol Rupiah"} )
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+
+                                    {/* RINCIAN PEMBAYARAN */}
+                                    <div className="mt-1 pt-1 border-t border-dashed border-gray-200">
+                                        <div className="flex">
+                                            <div className="w-28 font-bold text-[10px] uppercase text-gray-400">Keterangan</div>
+                                            <div className="w-4 text-center text-[10px]">:</div>
+                                            <div className="flex-grow grid grid-cols-2 gap-x-6 gap-y-0.5">
+                                                <div className="space-y-0.5">
+                                                    <ChecklistItem label="SPP" value={formData.spp} />
+                                                    <ChecklistItem label="Akomodasi" value={formData.akomodasi} />
+                                                    <ChecklistItem label="Pendaftaran" value={formData.pendaftaran} />
+                                                </div>
+                                                <div className="space-y-0.5">
+                                                    <ChecklistItem isCustom={true} customLabel={formData.custom1Label} value={formData.custom1Value} />
+                                                    <ChecklistItem isCustom={true} customLabel={formData.custom2Label} value={formData.custom2Value} />
+                                                    <ChecklistItem isCustom={true} customLabel={formData.custom3Label} value={formData.custom3Value} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                {/* FOOTER: Menggunakan mt-auto agar menempel di bawah tapi tidak overflow */}
+                                <div className="mt-auto flex justify-between items-end">
+                                    <div className="w-[58%] pb-1">
+                                        {formData.catatan && (
+                                            <div className="p-1.5 bg-yellow-50 border-l-2 border-yellow-400 text-[9px] leading-tight text-gray-700 italic mb-1.5 max-h-[35px] overflow-hidden">
+                                                <strong>Catatan:</strong> {formData.catatan}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="text-center w-40 relative pb-1">
+                                        <div className="text-[10px] mb-0.5 text-gray-700">
+                                            Kediri, {new Date(formData.tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                        </div>
+                                        <div className="font-bold text-[10px] uppercase mb-8">Penerima,</div>
+                                        
+                                        {/* Tanda Tangan */}
+                                        <div className="absolute inset-0 flex items-center justify-center pt-3 pointer-events-none">
+                                            {getSelectedReceiver().signature && (
+                                                <img 
+                                                    src={getSelectedReceiver().signature} 
+                                                    alt="TTD" 
+                                                    className="mix-blend-multiply opacity-80" 
+                                                    style={{ maxHeight: '45px', maxWidth: '100px', objectFit: 'contain' }} 
+                                                />
+                                            )}
+                                        </div>
+                                        
+                                        <div className="w-full border-t border-gray-400 pt-0.5">
+                                            <div className="font-bold text-[11px] uppercase text-blue-900 truncate">
+                                                {getSelectedReceiver().name}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Watermark Sederhana */}
+                            <div className="absolute inset-0 flex items-center justify-center opacity-[0.015] pointer-events-none">
+                                <div className="text-8xl font-black -rotate-12">LUNAS</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* Tombol Aksi */}
+                <div className="bg-white p-4 pb-8 flex gap-3 shadow-[0_-10px_30px_rgba(0,0,0,0.3)] z-20 flex-shrink-0">
+                    <button onClick={() => setViewMode('form')} className="flex-1 py-3 border-2 border-gray-200 rounded-xl font-bold text-gray-600 active:bg-gray-50">Edit Data</button>
+                    <button onClick={handlePrint} disabled={isLoading} className="flex-[2] py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg active:bg-blue-700 flex justify-center items-center gap-2">
+                        {isLoading ? <span className="animate-pulse">Loading...</span> : <><Download size={20} /> Simpan & Cetak PDF</>}
+                    </button>
+                </div>
+            </div>
+            );
+        }
+        return null;
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<KuitansiMobileApp />);
+</script>
+</body>
+</html>
